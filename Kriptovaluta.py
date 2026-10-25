@@ -5,61 +5,60 @@ from tkinter import ttk # Модуль "тематических" виджето
 import requests # Библиотека для отправки HTTP-запросов к API
 import json # Модуль для работы с JSON
 
-def exchange():
-    """Настройки для обращения к CoinGecko API"""
-    base_url = 'https://api.coingecko.com/api/v3' # Базовый адрес CoinGecko API (версия v3)
-    api = 'CG-LGbLjNCxJ7qcSKsR6tjaZAvr'    # персональный Demo-ключ API
-
-    headers = {                     # Словарь HTTP-заголовков, отправляемых с запросом
+base_url = 'https://api.coingecko.com/api/v3' # Базовый адрес CoinGecko API (версия v3)
+api = 'CG-LGbLjNCxJ7qcSKsR6tjaZAvr'
+headers = {                     # Словарь HTTP-заголовков, отправляемых с запросом
         'accept': 'application/json',  # Клиент ожидает ответ в формате JSON
         'x-cg-demo-api-key': api   # Заголовок с ключом доступа к Demo-тарифу
     }
-
-    url = f'{base_url}/simple/price'  # Итоговый адрес эндпоинта, возвращающего текущие цены
-    params = {                        # Query-параметры запроса
-        'ids': 'bitcoin,solana',      # ID монет через запятую (API-ID, не тикеры)
-        'vs_currencies': 'usd'        # Валюта, в которой вернуть цену (доллары США)
-    }
-
-    """Запрос к API и вывод результата в консоль"""
-    try:                              # Начало блока обработки исключений — защита от падения программы
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        # Отправляем GET-запрос:
-        # url      — адрес эндпоинта
-        # params   — параметры (requests сам добавит ?ids=...&vs_currencies=...)
-        # headers  — заголовки с ключом API
-        # timeout  — максимум 10 секунд ожидания ответа
-        response.raise_for_status()
-        # Если сервер вернул HTTP-ошибку (4xx или 5xx), выбрасывает исключение HTTPError
-
-        data = response.json()
-        # Парсит тело ответа из JSON в Python-словарь:
-        # {'bitcoin': {'usd': 67000.5}, 'solana': {'usd': 150.2}}
-        # print('Данные успешно получены')        # Информационное сообщение в консоль
-        # print(f"Bitcoin: ${data['bitcoin']['usd']:.2f}")
-        # print(f"Solana: ${data['solana']['usd']:.2f}")
-
-    except requests.exceptions.HTTPError as e:
-        print(f'Ошибка HTTP: {e}')
+def exchange():
+    """Настройки для обращения к CoinGecko API"""
+      # персональный Demo-ключ API
+    ticker = kripto_combobox.get()
+    coin_id = coin_ids.get(ticker)
+    price = get_price(coin_id)
+    if price is not None:
+        label.config(text=f'${price:.2f}')
+    else:
+        label.config(text='Ошибка загрузки')
 
 
-def update_label(event):
-    select_text = kripto_combobox.get()
-    label.config(text=select_text)
+
+
 
 
 def on_select(event):
     selected_item = kripto_combobox.get()
-
-    res_entry.delete(0, END)
-    res_entry.insert(0, f'Вы выбрали: {selected_item}')
+    label.config(text=selected_item, width=50)
 
 
-window = Tk()
-window.title('Текущие курсы криптовалют')
-window.geometry('338x330')
 
+def update_label(event=None):
+    ticker = kripto_combobox.get()
+    coin_id = coin_ids.get(ticker)
+    price = get_price(coin_id)
+    if price is not None:
+        label.config(text=f'${price:.2f}')
+    else:
+        label.config(text='Ошибка')
 
+def get_price(coin_id):
+    url = f'{base_url}/simple/price'
+    params = {
+        'ids' : coin_id,
+        'vs_currencies': 'usd'
+    }
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data.get(coin_id, {}).get('usd')
+    except requests.exceptions.HTTPError as e:
+        print(f'Ошибка HTTP: {e}')
+        return None
+    except (KeyError, ValueError) as e:
+        print(f'Ошибка данных: {e}')
+        return None
 
 kriptovaluta = {
     'BTC' : 'Bitcoin',
@@ -71,20 +70,33 @@ kriptovaluta = {
     'SOL' : 'Solana'
 }
 
+coin_ids = {
+    'BTC' : 'bitcoin',
+    'ETH' : 'ethereum',
+    'USDT' : 'tether',
+    'BNB' : 'binancecoin',
+    'XRP' : 'ripple',
+    'USDC' : 'usd-coin',
+    'SOL' : 'solana'
+}
 
 
-Label(text='Популярные криптовалюты', font=('Helvetica', 10)).pack()
+window = Tk()
+window.title('Текущие курсы криптовалют')
+window.geometry('338x330')
+
+Label(text='Популярные криптовалюты', font=('Helvetica', 10), relief='solid', borderwidth=2,  anchor='center', bg='white').pack(pady=10)
 
 
 kripto_combobox = ttk.Combobox(window, values= list(kriptovaluta.keys()), state='readonly')
 kripto_combobox.current(0)
-kripto_combobox.bind('<<ComboboxSelected>>', on_select)
+kripto_combobox.bind('<<ComboboxSelected>>', update_label)
 kripto_combobox.pack()
-res_entry = ttk.Entry(window, width=25)
-res_entry.pack(pady=10)
+label = Label(font=('Arial', 14))
+label.pack()
 
-Button(text='Получить курс обмена криптовалют к доллару',
-       command=exchange).pack(pady=10, padx=10)
+# Button(text='Получить курс обмена криптовалют к доллару',
+#        command=exchange).pack(pady=10, padx=10)
 
 
 
