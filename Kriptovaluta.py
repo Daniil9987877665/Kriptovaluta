@@ -1,106 +1,148 @@
-import tkinter # Главный модуль библиотеки для создания графического интерфейса
-from tkinter import *  # Импорт всех публичных имён tkinter (Tk, Label и т.д.) без префикса
-from tkinter import messagebox as mb # Модуль диалоговых окон (сообщения, предупреждения) под псевдонимом mb
-from tkinter import ttk # Модуль "тематических" виджетов (Combobox, Progressbar и др.)
-import requests # Библиотека для отправки HTTP-запросов к API
-import json # Модуль для работы с JSON
-
-base_url = 'https://api.coingecko.com/api/v3' # Базовый адрес CoinGecko API (версия v3)
-api = 'CG-LGbLjNCxJ7qcSKsR6tjaZAvr'
-headers = {                     # Словарь HTTP-заголовков, отправляемых с запросом
-        'accept': 'application/json',  # Клиент ожидает ответ в формате JSON
-        'x-cg-demo-api-key': api   # Заголовок с ключом доступа к Demo-тарифу
-    }
-def exchange():
-    """Настройки для обращения к CoinGecko API"""
-      # персональный Demo-ключ API
-    ticker = kripto_combobox.get()
-    coin_id = coin_ids.get(ticker)
-    price = get_price(coin_id)
-    if price is not None:
-        label.config(text=f'${price:.2f}')
-    else:
-        label.config(text='Ошибка загрузки')
+import tkinter as tk
+from tkinter import ttk, messagebox
+import requests
+from datetime import datetime
 
 
+# ==================== КОНСТАНТЫ ====================
+
+base_url = 'https://api.coingecko.com/api/v3'
+api_key = 'CG-LGbLjNCxJ7qcSKsR6tjaZAvr'
+headers = {
+    'accept': 'application/json',
+    'x-cg-demo-api-key': api_key
+}
+
+coin_ids = {
+    'bitcoin': 'BTC',
+    'ethereum': 'ETH',
+    'binancecoin': 'BNB',
+    'solana': 'SOL',
+    'ripple': 'XRP'
+}
+
+currencies = ['usd', 'eur', 'rub']
+refresh_interval = 60
 
 
+# ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
+
+current_data = {}
+current_currency = 'usd'
 
 
-def on_select(event):
-    selected_item = kripto_combobox.get()
-    label.config(text=selected_item, width=50)
+# ==================== ФУНКЦИИ ====================
 
-
-
-def update_label(event=None):
-    ticker = kripto_combobox.get()
-    coin_id = coin_ids.get(ticker)
-    price = get_price(coin_id)
-    if price is not None:
-        label.config(text=f'${price:.2f}')
-    else:
-        label.config(text='Ошибка')
-
-def get_price(coin_id):
+def get_prices():
+    """Запрашивает у API цены всех монет сразу во всех валютах.
+    Возвращает словарь или None при ошибке."""
     url = f'{base_url}/simple/price'
     params = {
-        'ids' : coin_id,
-        'vs_currencies': 'usd'
+        'ids': ','.join(coin_ids.keys()),
+        'vs_currencies': ','.join(currencies)
     }
     try:
         response = requests.get(url, params=params, headers=headers, timeout=10)
         response.raise_for_status()
-        data = response.json()
-        return data.get(coin_id, {}).get('usd')
-    except requests.exceptions.HTTPError as e:
-        print(f'Ошибка HTTP: {e}')
-        return None
-    except (KeyError, ValueError) as e:
-        print(f'Ошибка данных: {e}')
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f'Ошибка сети: {e}')
         return None
 
-kriptovaluta = {
-    'BTC' : 'Bitcoin',
-    'ETH' : 'Ethereum',
-    'USDT' : 'Tether',
-    'BNB' : 'Binance Coin',
-    'XRP' : 'Ripple',
-    'USDC' : 'USD Coin',
-    'SOL' : 'Solana'
-}
 
-coin_ids = {
-    'BTC' : 'bitcoin',
-    'ETH' : 'ethereum',
-    'USDT' : 'tether',
-    'BNB' : 'binancecoin',
-    'XRP' : 'ripple',
-    'USDC' : 'usd-coin',
-    'SOL' : 'solana'
-}
+def fetch_and_update():
+    """Получает данные и обновляет интерфейс.
+    Выполняется в главном потоке (без threading и queue)."""
+    global current_data
 
+    status_label.config(text='Загрузка...', fg='orange')
+    window.update()   # Принудительно перерисовать окно перед запросом
 
-window = Tk()
-window.title('Текущие курсы криптовалют')
-window.geometry('338x330')
+    data = get_prices()
 
-Label(text='Популярные криптовалюты', font=('Helvetica', 10), relief='solid', borderwidth=2,  anchor='center', bg='white').pack(pady=10)
+    if data is None:
+        status_label.config(text='Ошибка загрузки', fg='red')
+        messagebox.showerror('Ошибка', 'Не удалось получить данные от API.\nПроверьте интернет-соединение.')
+        return
+
+    current_data = data
+    time_label.config(text=datetime.now().strftime('%H:%M:%S'))
+    status_label.config(text='Данные обновлены', fg='green')
+    render_table()
 
 
-kripto_combobox = ttk.Combobox(window, values= list(kriptovaluta.keys()), state='readonly')
-kripto_combobox.current(0)
-kripto_combobox.bind('<<ComboboxSelected>>', update_label)
-kripto_combobox.pack()
-label = Label(font=('Arial', 14))
-label.pack()
+def render_table():
+    """Перерисовывает таблицу с ценами в выбранной валюте."""
+    for row in tree.get_children():
+        tree.delete(row)
 
-# Button(text='Получить курс обмена криптовалют к доллару',
-#        command=exchange).pack(pady=10, padx=10)
+    for coin_id, ticker in coin_ids.items():
+        price = current_data.get(coin_id, {}).get(current_currency)
+        if price is not None:
+            price_str = f'{price:,.2f} {current_currency.upper()}'
+        else:
+            price_str = '—'
+        tree.insert('', 'end', values=(ticker, price_str))
 
 
+def on_currency_change(event=None):
+    """Срабатывает при выборе другой валюты."""
+    global current_currency
+    current_currency = currency_combobox.get().lower()
+    render_table()
 
 
+def schedule_auto_refresh():
+    """Планирует автообновление каждые refresh_interval секунд."""
+    fetch_and_update()
+    window.after(refresh_interval * 1000, schedule_auto_refresh)
 
 
+# ==================== ГРАФИЧЕСКИЙ ИНТЕРФЕЙС ====================
+
+window = tk.Tk()
+window.title('CriptoMonitor ')
+window.geometry('600x450')
+window.iconbitmap('favicon.ico')
+
+# --- Верхняя панель: выбор валюты, кнопка, время ---
+top_frame = tk.Frame(window, padx=8, pady=8)
+top_frame.pack(fill='x')
+
+tk.Label(top_frame, text='Базовая валюта:').pack(side='left')
+
+currency_combobox = ttk.Combobox(
+    top_frame,
+    values=[c.upper() for c in currencies],
+    state='readonly',
+    width=6
+)
+currency_combobox.set('USD')
+currency_combobox.bind('<<ComboboxSelected>>', on_currency_change)
+currency_combobox.pack(side='left', padx=6)
+
+refresh_button = tk.Button(top_frame, text='Обновить', command=fetch_and_update)
+refresh_button.pack(side='left', padx=6)
+
+tk.Label(top_frame, text='Обновлено:').pack(side='left', padx=(20, 4))
+time_label = tk.Label(top_frame, text='—')
+time_label.pack(side='left')
+
+# --- Таблица с ценами ---
+columns = ('ticker', 'price')
+tree = ttk.Treeview(window, columns=columns, show='headings')
+tree.heading('ticker', text='Монета')
+tree.heading('price', text='Цена')
+tree.column('ticker', width=150, anchor='w')
+tree.column('price', width=250, anchor='e')
+tree.pack(fill='both', expand=True, padx=8, pady=8)
+
+# --- Строка статуса внизу ---
+status_label = tk.Label(window, text='Готово', fg='black', anchor='w', relief='sunken')
+status_label.pack(fill='x', side='bottom')
+
+
+# ==================== ЗАПУСК ====================
+
+schedule_auto_refresh()
 window.mainloop()
